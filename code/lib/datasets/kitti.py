@@ -46,11 +46,11 @@ class KITTI(data.Dataset):
         # data split loading
         assert split in ['train', 'val', 'trainval', 'test']
         self.split = split
-        split_dir = os.path.join(root_dir, 'KITTI', 'ImageSets', split + '.txt')
+        split_dir = os.path.join(root_dir, 'ImageSets', split + '.txt')
         self.idx_list = [x.strip() for x in open(split_dir).readlines()]
 
         # path configuration
-        self.data_dir = os.path.join(root_dir, 'KITTI', 'testing' if split == 'test' else 'training')
+        self.data_dir = os.path.join(root_dir, 'testing' if split == 'test' else 'training')
         self.image_dir = os.path.join(self.data_dir, 'image_2')
         self.depth_dir = os.path.join(self.data_dir, 'depth')
         self.calib_dir = os.path.join(self.data_dir, 'calib')
