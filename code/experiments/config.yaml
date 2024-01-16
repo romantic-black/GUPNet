@@ -2,7 +2,8 @@ random_seed: 444
 
 dataset:
   type: 'kitti'
-  root_dir: '../../Dataset/3d-detection/'
+  root_dir: '/root/autodl-tmp/'
+  database_dir: '/root/autodl-tmp/kitti_drx_database'
   batch_size: 24
   class_merging: False
   use_dontcare: False
