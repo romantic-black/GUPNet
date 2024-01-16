@@ -15,6 +15,8 @@ from lib.datasets.kitti_utils import Calibration
 from lib.datasets.kitti_utils import get_affine_transform
 from lib.datasets.kitti_utils import affine_transform
 from lib.datasets.kitti_utils import compute_box_3d
+from tools.dataset_util import Dataset
+from tools.sample_util import SampleDatabase, merge_labels
 import pdb
 
 class KITTI(data.Dataset):
@@ -88,11 +90,36 @@ class KITTI(data.Dataset):
     def __len__(self):
         return self.idx_list.__len__()
 
+    def get_data(self, idx, use_aug=False, test=False):
+        dataset, database = self.dataset, self.database
+        calib = dataset.get_calib(idx)
+
+        if test:
+            labels = None
+            image = dataset.get_image(idx)
+            depth = np.zeros((image.shape[0], image.shape[1]), dtype=np.float32)
+        else:
+            image, depth = dataset.get_image_with_depth(idx, use_penet=False)
+            _, _, labels = dataset.get_bbox(idx, chosen_cls=["Car", 'Van', 'Truck', 'DontCare'])
+
+        if use_aug:
+            ground, non_ground = dataset.get_lidar_with_ground(idx, fov=True)
+            grid = dataset.get_grid(idx)
+            plane = dataset.get_plane(idx)
+            samples = database.get_samples(ground, non_ground, calib, plane, grid)
+            image, depth, samples = database.add_samples_to_scene(samples, image, depth, use_edge_blur=True)
+            labels = merge_labels(labels, samples, calib, image.shape)
+
+        return Image.fromarray(image), Image.fromarray(depth), labels, calib
+
     def __getitem__(self, item):
         #  ============================   get inputs   ===========================
         index = int(self.idx_list[item])  # index mapping, get real data id
         # image loading
-        img = self.get_image(index)
+        random_sample_flag = False
+        if self.data_augmentation and np.random.random() < self.random_sample:
+            random_sample_flag = True
+        img, d, objects, calib = self.get_data(index, use_aug=random_sample_flag, test=self.split == 'test')
         img_size = np.array(img.size)
 
         # data augmentation for image
@@ -122,11 +149,9 @@ class KITTI(data.Dataset):
         img = (img - self.mean) / self.std
         img = img.transpose(2, 0, 1)  # C * H * W
 
-        calib = self.get_calib(index)
         features_size = self.resolution // self.downsample# W * H
         #  ============================   get labels   ==============================
         if self.split!='test':
-            objects = self.get_label(index)
             # data augmentation for labels
             if random_flip_flag:
                 calib.flip(img_size)

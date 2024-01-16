@@ -3,13 +3,25 @@ random_seed: 444
 dataset:
   type: 'kitti'
   root_dir: '../../Dataset/3d-detection/'
-  batch_size: 32
+  batch_size: 24
   class_merging: False
   use_dontcare: False
   use_3d_center: True
   writelist: ['Car','Pedestrian','Cyclist']
   random_flip: 0.5
   random_crop: 0.5
+  random_sample:
+    prob: 0.5
+    database_num: -1
+    sample_num: 10
+    sample_constraint:
+      max_z2y: 100
+      max_x2z: 10
+      max_dz: 10
+      max_rate: 1.2
+      min_rate: 0.5
+  scale: 0.4
+  shift: 0.1
   scale: 0.4
   shift: 0.1
 
