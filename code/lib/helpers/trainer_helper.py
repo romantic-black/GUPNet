@@ -45,8 +45,8 @@ class Trainer(object):
 
     def train(self):
         start_epoch = self.epoch
-        ei_loss = self.compute_e0_loss()
-        loss_weightor = Hierarchical_Task_Learning(ei_loss)
+        # ei_loss = self.compute_e0_loss()
+        # loss_weightor = Hierarchical_Task_Learning(ei_loss)
         for epoch in range(start_epoch, self.cfg_train['max_epoch']):
             # train one epoch
             self.logger.info('------ TRAIN EPOCH %03d ------' %(epoch + 1))
@@ -58,12 +58,12 @@ class Trainer(object):
             # reset numpy seed.
             # ref: https://github.com/pytorch/pytorch/issues/5059
             np.random.seed(np.random.get_state()[1][0] + epoch)
-            loss_weights = loss_weightor.compute_weight(ei_loss,self.epoch)
-            log_str = 'Weights: '
-            for key in sorted(loss_weights.keys()):
-                log_str += ' %s:%.4f,' %(key[:-4], loss_weights[key])   
-            self.logger.info(log_str)                     
-            ei_loss = self.train_one_epoch(loss_weights)
+            # loss_weights = loss_weightor.compute_weight(ei_loss,self.epoch)
+            # log_str = 'Weights: '
+            # for key in sorted(loss_weights.keys()):
+            #     log_str += ' %s:%.4f,' %(key[:-4], loss_weights[key])
+            # self.logger.info(log_str)
+            ei_loss = self.train_one_epoch()
             self.epoch += 1
             
             # update learning rate
@@ -126,11 +126,10 @@ class Trainer(object):
             criterion = GupnetLoss(self.epoch)
             outputs = self.model(inputs,coord_ranges,calibs,targets)
             total_loss, loss_terms = criterion(outputs, targets)
-            
-            if loss_weights is not None:
-                total_loss = torch.zeros(1).cuda()
-                for key in loss_weights.keys():
-                    total_loss += loss_weights[key].detach()*loss_terms[key]
+
+            total_loss = torch.zeros(1).cuda()
+            for key in loss_terms.keys():
+                total_loss += loss_terms[key]
             total_loss.backward()
             self.optimizer.step()
             
@@ -162,6 +161,8 @@ class Trainer(object):
         self.model.eval()
         results = {}
         disp_dict = {}
+        data_dir = self.test_loader.dataset.data_dir
+        idx_list = [name[:-4] for name in os.listdir(data_dir + '/label_2')][:100]
         progress_bar = tqdm.tqdm(total=len(self.test_loader), leave=True, desc='Evaluation Progress')
         with torch.no_grad():
             for batch_idx, (inputs, calibs, coord_ranges, _, info) in enumerate(self.test_loader):
@@ -175,9 +176,9 @@ class Trainer(object):
 
                 dets = extract_dets_from_outputs(outputs, K=50)
                 dets = dets.detach().cpu().numpy()
-                
+
                 # get corresponding calibs & transform tensor to numpy
-                calibs = [self.test_loader.dataset.get_calib(index)  for index in info['img_id']]
+                calibs = [self.test_loader.dataset.dataset.get_calib(idx_list[index])  for index in info['img_id']]
                 info = {key: val.detach().cpu().numpy() for key, val in info.items()}
                 cls_mean_size = self.test_loader.dataset.cls_mean_size
                 dets = decode_detections(dets = dets,
@@ -194,9 +195,11 @@ class Trainer(object):
     def save_results(self, results, output_dir='./outputs'):
         output_dir = os.path.join(output_dir, 'data')
         os.makedirs(output_dir, exist_ok=True)
+        data_dir = self.test_loader.dataset.data_dir
+        idx_list = [name[:-4] for name in os.listdir(data_dir + '/label_2')][:100]
 
         for img_id in results.keys():
-            out_path = os.path.join(output_dir, '{:06d}.txt'.format(img_id))
+            out_path = os.path.join(output_dir, f'{idx_list[img_id]}.txt')
             f = open(out_path, 'w')
             for i in range(len(results[img_id])):
                 class_name = self.class_name[int(results[img_id][i][0])]

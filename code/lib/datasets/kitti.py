@@ -9,14 +9,11 @@ import matplotlib.pyplot as plt
 from lib.datasets.utils import angle2class
 from lib.datasets.utils import gaussian_radius
 from lib.datasets.utils import draw_umich_gaussian
-from lib.datasets.utils import get_angle_from_box3d,check_range
 from lib.datasets.kitti_utils import get_objects_from_label
 from lib.datasets.kitti_utils import Calibration
 from lib.datasets.kitti_utils import get_affine_transform
 from lib.datasets.kitti_utils import affine_transform
-from lib.datasets.kitti_utils import compute_box_3d
 from tools.dataset_util import Dataset
-from tools.sample_util import SampleDatabase, merge_labels
 import pdb
 
 class KITTI(data.Dataset):
@@ -26,7 +23,7 @@ class KITTI(data.Dataset):
         self.max_objs = 50
         self.class_name = ['Pedestrian', 'Car', 'Cyclist']
         self.cls2id = {'Pedestrian': 0, 'Car': 1, 'Cyclist': 2}
-        self.resolution = np.array([1280, 384])  # W * H
+        self.resolution = np.array([1600, 800])  # W * H
         self.use_3d_center = cfg['use_3d_center']
         self.writelist = cfg['writelist']
         if cfg['class_merging']:
@@ -46,18 +43,16 @@ class KITTI(data.Dataset):
         # data split loading
         assert split in ['train', 'val', 'trainval', 'test']
         self.split = split
-        split_dir = os.path.join(root_dir, 'ImageSets', split + '.txt')
-        self.idx_list = [x.strip() for x in open(split_dir).readlines()]
 
         # path configuration
-        self.data_dir = os.path.join(root_dir, 'testing' if split == 'test' else 'training')
+        self.data_dir = os.path.join(root_dir, 'val' if split == 'val' else 'training')
+        self.idx_list = [name[:-4] for name in os.listdir(self.data_dir + '/label_2')][:100]
         self.image_dir = os.path.join(self.data_dir, 'image_2')
         self.depth_dir = os.path.join(self.data_dir, 'depth')
         self.calib_dir = os.path.join(self.data_dir, 'calib')
         self.label_dir = os.path.join(self.data_dir, 'label_2')
 
         self.dataset = Dataset(split, root_dir)
-        self.database = SampleDatabase(cfg["database_dir"], self.idx_list, cfg["random_sample"])
         # data augmentation configuration
         self.data_augmentation = True if split in ['train', 'trainval'] else False
         self.random_flip = cfg['random_flip']
@@ -94,35 +89,26 @@ class KITTI(data.Dataset):
         return self.idx_list.__len__()
 
     def get_data(self, idx, use_aug=False, test=False):
-        dataset, database = self.dataset, self.database
+        dataset = self.dataset
         calib = dataset.get_calib(idx)
 
         if test:
             labels = None
-            image = dataset.get_image(idx)
-            depth = np.zeros((image.shape[0], image.shape[1]), dtype=np.float32)
+            image = dataset.get_image(idx)[100:]
         else:
-            image, depth = dataset.get_image_with_depth(idx, use_penet=False)
+            image = dataset.get_image(idx)[100:]
             _, _, labels = dataset.get_bbox(idx, chosen_cls=["Car", 'Van', 'Truck', 'DontCare'])
 
-        if use_aug:
-            ground, non_ground = dataset.get_lidar_with_ground(idx, fov=True)
-            grid = dataset.get_grid(idx)
-            plane = dataset.get_plane(idx)
-            samples = database.get_samples(ground, non_ground, calib, plane, grid)
-            image, depth, samples = database.add_samples_to_scene(samples, image, depth, use_edge_blur=True)
-            labels = merge_labels(labels, samples, calib, image.shape)
-
-        return Image.fromarray(image), Image.fromarray(depth), labels, calib
+        return Image.fromarray(image), labels, calib
 
     def __getitem__(self, item):
         #  ============================   get inputs   ===========================
-        index = int(self.idx_list[item])  # index mapping, get real data id
+        index = self.idx_list[item]  # index mapping, get real data id
         # image loading
         random_sample_flag = False
         if self.data_augmentation and np.random.random() < self.random_sample:
             random_sample_flag = True
-        img, d, objects, calib = self.get_data(index, use_aug=random_sample_flag, test=self.split == 'test')
+        img, objects, calib = self.get_data(index, use_aug=random_sample_flag, test=self.split == 'test')
         img_size = np.array(img.size)
 
         # data augmentation for image
@@ -178,7 +164,7 @@ class KITTI(data.Dataset):
             height2d = np.zeros((self.max_objs, 1), dtype=np.float32)
             cls_ids = np.zeros((self.max_objs), dtype=np.int64)
             indices = np.zeros((self.max_objs), dtype=np.int64)
-            mask_2d = np.zeros((self.max_objs), dtype=np.uint8)
+            mask_2d = np.zeros((self.max_objs), dtype=bool)
             mask_3d = np.zeros((self.max_objs), dtype=np.uint8)
             object_num = len(objects) if len(objects) < self.max_objs else self.max_objs
             for i in range(object_num):
@@ -248,7 +234,7 @@ class KITTI(data.Dataset):
 
                 #objects[i].trucation <=0.5 and objects[i].occlusion<=2 and (objects[i].box2d[3]-objects[i].box2d[1])>=25:
                 if objects[i].trucation <=0.5 and objects[i].occlusion<=2:    
-                    mask_2d[i] = 1           
+                    mask_2d[i] = True
             targets = {'depth': depth,
                    'size_2d': size_2d,
                    'heatmap': heatmap,
@@ -264,7 +250,7 @@ class KITTI(data.Dataset):
             targets = {}
         # collect return data
         inputs = img
-        info = {'img_id': index,
+        info = {'img_id': item,
                 'img_size': img_size,
                 'bbox_downsample_ratio': img_size/features_size}   
         return inputs, calib.P2, coord_range, targets, info   #calib.P2

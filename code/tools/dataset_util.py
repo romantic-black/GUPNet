@@ -13,7 +13,7 @@ class Dataset:
     def __init__(self, split, dataset_path):
         assert split in ["train", "val", "test", "trainval"]
         self.split = split
-        self.dataset_name = 'testing' if split == 'test' else 'training'
+        self.dataset_name = 'val' if split == 'val' else 'training'
         self.dataset_path = pathlib.Path(rf"{dataset_path}/{self.dataset_name}")
         self.kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
 
@@ -92,18 +92,27 @@ class Dataset:
         return mask, blank
 
     def get_lidar(self, idx):
-        lidar_file = self.dataset_path / 'velodyne' / ('%06d.bin' % idx)
+        if isinstance(idx, int):
+            lidar_file = self.dataset_path / 'velodyne' / ('%06d.bin' % idx)
+        elif isinstance(idx, str):
+            lidar_file = self.dataset_path / 'velodyne' / (idx + '.bin')
         assert lidar_file.exists()
         return np.fromfile(str(lidar_file), dtype=np.float32).reshape(-1, 4)
 
     def get_image(self, idx):
-        image_file = self.dataset_path / 'image_2' / ('%06d.png' % idx)
+        if isinstance(idx, int):
+            image_file = self.dataset_path / 'image_2' / ('%06d.png' % idx)
+        elif isinstance(idx, str):
+            image_file = self.dataset_path / 'image_2' / (idx + '.png')
         assert image_file.exists()
         return cv2.imread(str(image_file))
 
     def get_calib(self, idx):
-        calib_file = self.dataset_path / 'calib' / ('%06d.txt' % idx)
-        assert calib_file.exists()
+        if isinstance(idx, int):
+            calib_file = self.dataset_path / 'calib' / ('%06d.txt' % idx)
+        elif isinstance(idx, str):
+            calib_file = self.dataset_path / 'calib' / (idx + '.txt')
+        assert calib_file.exists(), f'{calib_file} not found'
         return Calibration(str(calib_file))
 
     def get_depth_penet(self, idx):
@@ -146,7 +155,10 @@ class Dataset:
         return rgb, depth
 
     def get_label(self, idx):
-        label_file = self.dataset_path / 'label_2' / ('%06d.txt' % idx)
+        if isinstance(idx, int):
+            label_file = self.dataset_path / 'label_2' / ('%06d.txt' % idx)
+        elif isinstance(idx, str):
+            label_file = self.dataset_path / 'label_2' / (idx + '.txt')
         assert label_file.exists()
         return get_objects_from_label(label_file)
 
@@ -185,7 +197,9 @@ class Dataset:
 
     def get_bbox(self, idx, chosen_cls=('Car', 'Pedestrian', 'Cyclist')):
         obj_list = self.get_label(idx)
-        obj_list = [obj for obj in obj_list if obj.cls_type in chosen_cls]
+        obj_list = [obj for obj in obj_list if obj.cls_type.capitalize() in chosen_cls]
+        for obj in obj_list:
+            obj.cls_type = obj.cls_type.capitalize()
         bbox3d = np.array([[obj.pos[0], obj.pos[1], obj.pos[2], obj.l, obj.h, obj.w, obj.ry] for obj in obj_list])
         bbox2d = np.array([obj.box2d for obj in obj_list])
         return bbox3d, bbox2d, obj_list
